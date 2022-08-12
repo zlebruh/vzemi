@@ -1,0 +1,33 @@
+{
+  "name": "zemi",
+  "version": "0.0.1-alpha.1",
+  "description": "Fetching REST APIs",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "jest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zlebruh/zemi.git"
+  },
+  "keywords": [
+    "api",
+    "fetch",
+    "data",
+    "cache",
+    "mock",
+    "mocking endpoints",
+    "extract result",
+    "data fetching",
+    "config based"
+  ],
+  "author": "zlebruh <code@battlebroyale.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/zlebruh/zemi/issues"
+  },
+  "homepage": "https://github.com/zlebruh/zemi#readme",
+  "devDependencies": {
+    "jest": "^28.1.3"
+  }
+}
