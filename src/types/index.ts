@@ -21,6 +21,7 @@ export type ReqProps = {
   name: string;
   hash: string;
   multi: boolean;
+  spawned: number;
 }
 
 export type FetchResponse = {
@@ -45,6 +46,7 @@ export type CollectionOptions = {
   done?: Function | String;
   collections?: string[];
   isFile?: boolean;
+  origin?: string;
 }
 
 export type CollectionsOptions = {
