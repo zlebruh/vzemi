@@ -39,7 +39,7 @@ const fetcherScopedCode = () => {
   }
 
   const splitProps = (obj) => {
-    const SPECIAL = ['$done', '$body', '$path', '$refresh', '$reject', '$options', '$headers', '$extract']
+    const SPECIAL = ['$body', '$path', '$refresh', '$reject', '$options', '$headers', '$extract']
     const params = { ...obj }
     const special = {}
 
@@ -121,6 +121,12 @@ const fetcherScopedCode = () => {
   // ### STORE -  End  - #############################################################################################################################
 
   let META = null
+  const validationPairs = {
+    always: isString,
+    options: isObject,
+    domains: isObject,
+    collections: isObject,
+  }
   const VERIFY = {
     name: { test: (v) => v in META.collections, text: "Collection '{{value}}' was not recognized" },
     url: { text: "Collection '{{value}}' has no URL" },
@@ -245,27 +251,44 @@ const fetcherScopedCode = () => {
     return data
   }
 
+  const delayResponse = async (req) => {
+    const { spawned, collection } = req
+    const delay = collection.delayAtLeast
+
+    if (typeof delay === 'number') {
+      const now = Date.now()
+      const ms = delay - (now - spawned)
+      ms > 0 && await new Promise(r => setTimeout(r, ms))
+    }
+
+    return true
+  }
+
   const fetchAttempt = async (jobID, params) => {
     const { name, props, method } = params
     const reject = (props?.$reject || META?.collections[name]?.props?.$reject) === true
     const { $req, ...result } = await fetchOne({ name, props, method }).catch(produceError)
     const pl = omit(result, ['$req'])
 
-    if ($req) sendMsg({ cmd: 'emit_out', pl, $req })
+    // Delay the response if needed
+    $req && await delayResponse($req)
 
     return sendMsg({ jobID, pl, cmd: 'fetch_out', toReject: pl.error === 1 && reject})
   }
 
   const setup = (props) => {
-    const { collections, options } = props
-    const opsOK = isObject(options, true)
-    const colsOK = isObject(collections, true)
+    const obj = Object.entries(validationPairs).reduce((acc, [k, method]) => {
+      const value = props[k]
+      // TODO: Decide what to do with this
+      // Might be a good idea to add more methods to zemi?
+      // if (method(value, true)) acc[k] = value
+      if (method(value)) acc[k] = value
+      return acc
+    }, {})
 
-    if (opsOK) META.options = options
-    if (colsOK) META.collections = collections
-    if (opsOK || colsOK) sendMsg({ cmd: 'setup_out', pl: META })
+    const pl = Object.assign(META, obj)
 
-    return META
+    return sendMsg({ cmd: 'setup_out', pl })
   }
 
   const init = (props) => {

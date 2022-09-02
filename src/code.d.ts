@@ -32,7 +32,8 @@ declare function cacheAdd(hash, data): boolean
 declare function cacheRemove(hash: string): boolean
 
 // ################ Fetcher ################
-declare const META: null | { options: Obj, collections: Obj }
+declare let META: null | { options: Obj, collections: Obj }
+declare const validationPairs: Obj
 declare const VERIFY: Obj
 
 declare function buildURL(req: ReqProps, method: FetchMethod): string

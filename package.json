@@ -1,6 +1,6 @@
 {
   "name": "zemi",
-  "version": "0.0.1-alpha.2",
+  "version": "0.0.1-alpha-working-1",
   "description": "Fetching REST APIs",
   "main": "src/index.js",
   "scripts": {

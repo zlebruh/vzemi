@@ -1,74 +1,115 @@
-# fetch-her
-Simple data fetching service for REST APIs
-Now, with a bit saner JWT Bearer implementation, mocking endpoints, and more
+# zemi
+Data fetching service for REST APIs
 
 ## Usage
 ```javascript
-import fetchService from 'fetch-her';
+import zemi from 'zemi';
 
-fetchService.Setup({ collections: myCollections });
+zemi.setup({ collections: myCollections });
 
-await fetchService.fetch('SOME_COLLECTION_NAME', {...});
+await zemi.fetch('SOME_COLLECTION_NAME', {...});
 ```
 
-## Configuration
-### Define your collections / end-points
+# Configuration
+## All **setup** options
+```typescript
+zemi.setup({
+  // User provided string is used to dispatch a CustomEvent instance after every fetch
+  always?: string,
+
+  // Set a list of global options and headers used for every request
+  // Each of those can be overwritten by collections and requests
+  options?: {
+    headers: {
+      no: 'more',
+      hanging: 'wires',
+      bearer: 'HASH' // Your token or null to disable the header
+    }
+  }
+
+  // Your collections. Each one has a name and a few basic props such as
+  collections?: {
+    [key: string]: {
+      // This can be any full or relative path
+      url: string,
+
+      // Optional but highly recommended
+      method?: string,
+
+      // Optional. 'ram' is the only accepted value at this time
+      cache?: string,
+
+      // Optional. The actual fetch RequestInit object that includes headers and stuff
+      options?: object,
+
+      // Optional. Collection-specific headers.
+      // Merged with domain-specific headers. Can be overwritten while making this request via '$headers'
+      headers?: object,
+
+      // You can assign anything to the `mock` property
+      // Whatever you put here will be your `data` property
+      mock?: {some: [1, 22, 333], more: 'stuff', aaa: 111, bbb: 222, ccc: {ama: 'zing'}},
+
+      // Extract a list of props from the response. Think of it as "pick"
+      extract?: ['thing1', 'anotherThing'], // string[]
+      
+      // Delay a request by ms. Applies to mocked and failed ones
+      // Skipped when the request takes longer than provided integer
+      // Time it took the request is substracted from provided integer
+      delayAtLeast?: number,
+
+      // You can also upload files
+      uploadFile?: {
+        url: '/upload',
+        method: 'POST',
+        isFile: true,
+      },
+
+      // You may use collections of aggregated collections
+      allInfo: {
+        collections: [
+          // No such collections. Someone forgot them here...
+          'about', 'info',
+
+          // These are real ones
+          'employees', 'employee', 'create', 'update', 'delete',
+        ],
+      },
+    }
+  }
+});
+```
+
+## Simple Configuration - Define your collections / end-points
 ```javascript
 const myCollections = {
   unfinished: {
     url: 'http://non.finished-api.yourdomain.com/api/v3/something',
     method: 'GET',
-
-    // OPTIONAL PARAMETER - You can assign anything to the `mock` property
-    // Whatever you put here will be your `data` property
     mock: {some: [1, 22, 333], more: 'stuff', aaa: 111, bbb: 222, ccc: {ama: 'zing'}},
-    extract: ['some', 'ccc'] // OPTIONAL - string[]
-  },
-  
-  employees: {
-    url: 'http://dummy.restapiexample.com/api/v1/employees',
-    cache: 'ram', // OPTIONAL PARAMETER. 'ram' is the only accepted value at this time
-    method: 'GET',
-    options: {}, // OPTIONAL PARAMETER
-    headers: {}, // OPTIONAL PARAMETER
-    done: (e) => (), // OPTIONAL PARAMETER - Function | String
+    extract: ['some', 'ccc']
+    delayAtLeast: 5000
   },
   employee: {
     url: 'http://dummy.restapiexample.com/api/v1/employee/1',
     method: 'GET',
-    cache: 'ram',
-    done: 'YOUR_CUSTOM_EVENT_NAME_HERE', // OPTIONAL PARAMETER - Function | String
+    cache: 'ram'
   },
-  create: {
+  creater: {
     url: 'http://dummy.restapiexample.com/api/v1/create',
     method: 'POST',
   },
-  update: {
+  updater: {
     url: 'http://dummy.restapiexample.com/api/v1/update/21',
     method: 'PUT',
   },
-  delete: {
+  patcher: {
+    url: 'http://dummy.restapiexample.com/api/v1/update/21',
+    method: 'patch',
+  },
+  deleter: {
     url: 'http://dummy.restapiexample.com/api/v1/delete/2',
     method: 'DELETE',
-  },
-
-  // You can also upload files
-  uploadFile: {
-    url: '/upload',
-    method: 'POST',
-    isFile: true,
-  },
-
-  // AGGREGATED
-  // You may use collections of aggregated collections
-  allInfo: {
-    collections: [
-      // No such collections. Someone forgot them here...
-      'about', 'info',
-
-      // These are real ones
-      'employees', 'employee', 'create', 'update', 'delete',
-    ],
   },
 };
 ```
@@ -87,10 +128,6 @@ const mai_data = await fff.fetch('employee', {
   // When used, its value will replace your regular non-special props
   // which are usually used as your body payload
   $body: {},
-
-  // Two ways to replace a collection emit or add a new one just for this call
-  $done: (e) => (),
-  $done: 'FETCH_DATA',
   
   // Causes the fetcher to reject failed attempts
   // Be default, we don't do that and simply resolve
@@ -105,7 +142,7 @@ const mai_data = await fff.fetch('employee', {
   // the global options and the collection itself
   $options: {...},
 
-  // Merged with headers from the global Setup object
+  // Merged with headers from the global setup object
   // AND the headers in the collection itself
   $headers: {x: 1, y: 2, z: 3},
 
@@ -123,7 +160,7 @@ The simplest way to abort a request is like this
 ```javascript
 const ac = new AbortController()
 
-fetchService.get('someCollection', {
+zemi.get('someCollection', {
   $options: { signal: ac.signal }
 })
 
@@ -131,19 +168,19 @@ ac.abort()
 ```
 
 ## Overwriting collection HTTP method
-`fetchService.fetch` does't make much sense to you? We've got you covered with<br >
+`zemi.fetch` does't make much sense to you? We've got you covered with<br >
 Existing collection method is being overwritten while making this request
 ```javascript
-fetchService.get('someCollection', {...})
-fetchService.put('someCollection', {...})
-fetchService.post('someCollection', {...})
-fetchService.patch('someCollection', {...})
-fetchService.delete('someCollection', {...})
+zemi.get('someCollection', {...})
+zemi.put('someCollection', {...})
+zemi.post('someCollection', {...})
+zemi.patch('someCollection', {...})
+zemi.delete('someCollection', {...})
 ```
 
-## Changing options, headers and JWT
+## Changing options, headers, etc.
 ```javascript
-fetchService.Setup({
+zemi.setup({
   collections: myCollections,
   options: {
     headers: {
@@ -175,24 +212,12 @@ await fff.fetch('unfinished')
 // }
 ```
 
-## Emitting events on successful fetch
+## Dispatching global event on **any** fetch, successful and failed
 ```javascript
-const myCollections = {
-  employees: {
-    url: 'http://dummy.restapiexample.com/api/v1/employees',
-    method: 'GET',
-    
-    // Recevies an object with the collection's name and the response
-    done: ({collection: String, response: Object}) => console.warn('Yeah...'),
-  },
-  employee: {
-    url: 'http://dummy.restapiexample.com/api/v1/employee/1',
-    method: 'GET',
-
-    // User provided string is used to dispatch a CustomEvent instance
-    done: 'YOUR_STRING',
-  }
-};
+zemi.setup({
+  always: 'YOUR_EVENT_NAME', // OPTIONAL PARAMETER - String
+});
 ```
+
 ## Important note about fetch
 You are expected to have `fetch` in your global scope.
