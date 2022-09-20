@@ -1,4 +1,4 @@
-import { Obj, ReqProps, PrefetchProps, FetchProps, FetchMethod, FetchResponse, SetupOptions, CollectionOptions } from './types'
+import { Obj, ReqProps, PrefetchProps, FetchProps, FetchMethod, FetchResponse, SetupOptions, CollectionOptions, CollectionsOptions } from './types'
 import * as fetchStore from './store'
 import { fetchData, splitProps, propsToCGI, isString, isObject, produceError, omit, extractResponse } from './utils'
 
@@ -166,36 +166,50 @@ const fetchAttempt = async (params: FetchProps) => {
 }
 
 // ##### Options management #####
-const optionsAdd = (origin: string, ops: Obj) => {
+const shallowMerge = (origin: string, ops: Obj) => {
+  return Object.entries(ops).reduce((acc: Obj, [k, v]: [string, any]) => {
+    if (isObject(v)) {
+      acc[k] = { ...acc[k], ...v }
+    }
+    
+    return acc
+  }, structuredClone(META.origins.get(origin)))
+}
+const optionsAdd = (origin: string, ops: Obj, merge = false) => {
   const { origins } = META
   const has = origins.has(origin)
+  const ok = has && isObject(ops)
 
-  if (has && isObject(ops)) {
-    origins.set(origin, ops)
-    return true
+  if (ok) {
+    const value = merge === true ? shallowMerge(origin, ops) : ops
+    origins.set(origin, value)
   }
 
-  return false
+  return ok
 }
 const optionsDrop = (origin: string) => META.origins.set(origin, {})
 
 // ##### Origin management #####
-const collectionsAdd = (origin: string, list: Obj) => {
+const collectionsAdd = (origin: string, list: Obj, ops: Obj = {}, merge = false) => {
   const entries = Object.entries(list)
 
   if (!entries.length) return false
 
-  const collections = entries.reduce((acc, [k, v]: [string, any]) => {
+  const collections = entries.reduce((acc: CollectionsOptions, [k, v]: [string, any]) => {
     return Object.assign(acc, { [k]: { ...v, origin } })
   }, META.collections)
 
   META.collections = collections
   META.origins.set(origin, {})
 
+  if (isObject(ops, true)) {
+    optionsAdd(origin, ops, merge)
+  }
+
   return true
 }
 const collectionsDrop = (origin: string) => {
-  if (isString(origin)) return false
+  if (!isString(origin)) return false
 
   const collections = { ...META.collections }
   Object.entries(collections).forEach(([k, v]: [string, any]) => origin === v.origin && delete collections[k])

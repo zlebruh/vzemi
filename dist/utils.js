@@ -1,13 +1,4 @@
 "use strict";
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.fetchData = exports.extractResponse = exports.pick = exports.omit = exports.splitProps = exports.propsToCGI = exports.produceError = exports.isObject = exports.isString = void 0;
 function isString(str, checkEmpty) {
@@ -81,27 +72,25 @@ exports.extractResponse = extractResponse;
 // ####################### FETCH #######################
 const regex = { json: /application\/json/, file: /image|file/ };
 const contentType = 'content-type';
-function fetchData(uri, options = {}) {
-    return __awaiter(this, void 0, void 0, function* () {
-        try {
-            const res = yield fetch(uri, options);
-            const headers = [...res.headers.entries()].reduce((r, pair) => {
-                const [key, val] = pair.map(v => v.toLowerCase());
-                return Object.assign(r, { [key]: val });
-            }, {});
-            const contentHeader = headers[contentType];
-            const data = yield (regex.json.test(contentHeader)
-                ? res.json()
-                : regex.file.test(contentHeader) ? res.blob() : res.text());
-            const { status } = res;
-            const result = { status, data };
-            return status >= 400
-                ? produceError({ message: res.statusText }, result)
-                : (data === null || data === void 0 ? void 0 : data.data) === void 0 ? result : Object.assign({ status }, data);
-        }
-        catch (err) {
-            return produceError(err);
-        }
-    });
+async function fetchData(uri, options = {}) {
+    try {
+        const res = await fetch(uri, options);
+        const headers = [...res.headers.entries()].reduce((r, pair) => {
+            const [key, val] = pair.map(v => v.toLowerCase());
+            return Object.assign(r, { [key]: val });
+        }, {});
+        const contentHeader = headers[contentType];
+        const data = await (regex.json.test(contentHeader)
+            ? res.json()
+            : regex.file.test(contentHeader) ? res.blob() : res.text());
+        const { status } = res;
+        const result = { status, data };
+        return status >= 400
+            ? produceError({ message: res.statusText }, result)
+            : (data === null || data === void 0 ? void 0 : data.data) === void 0 ? result : Object.assign({ status }, data);
+    }
+    catch (err) {
+        return produceError(err);
+    }
 }
 exports.fetchData = fetchData;

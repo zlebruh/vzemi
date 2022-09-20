@@ -22,15 +22,6 @@ var __importStar = (this && this.__importStar) || function (mod) {
     __setModuleDefault(result, mod);
     return result;
 };
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 var __rest = (this && this.__rest) || function (s, e) {
     var t = {};
     for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p) && e.indexOf(p) < 0)
@@ -136,11 +127,11 @@ const fetchOne = (fetchProps) => {
         return Promise.reject(err);
     }
 };
-const fetchMultiple = (collections, props) => __awaiter(void 0, void 0, void 0, function* () {
+const fetchMultiple = async (collections, props) => {
     const list = collections.map((name) => fetchAttempt({ name, props: props[name] }));
-    const data = yield Promise.all(list);
+    const data = await Promise.all(list);
     return collections.reduce((result, name, idx) => (Object.assign(Object.assign({}, result), { [name]: data[idx] })), {});
-});
+};
 const processResponse = (req, response) => {
     var _a;
     fetchStore.reqRemove(req.hash);
@@ -149,46 +140,55 @@ const processResponse = (req, response) => {
         fetchStore.cacheAdd(req.hash, data);
     return data;
 };
-const delayResponse = (req) => __awaiter(void 0, void 0, void 0, function* () {
+const delayResponse = async (req) => {
     const { spawned, collection } = req;
     const delay = collection.delayAtLeast;
     if (typeof delay === 'number') {
         const now = Date.now();
         const ms = delay - (now - spawned);
-        ms > 0 && (yield new Promise(r => setTimeout(r, ms)));
+        ms > 0 && await new Promise(r => setTimeout(r, ms));
     }
     return true;
-});
+};
 function emitResponse(detail) {
     const always = META.dispatchAlways;
     const emit = globalThis.dispatchEvent;
     return Boolean(always && emit && emit(new CustomEvent(always, { detail })));
 }
-const fetchAttempt = (params) => __awaiter(void 0, void 0, void 0, function* () {
+const fetchAttempt = async (params) => {
     var _a, _b;
     const { name, props = {}, method } = params;
     const reject = ((props === null || props === void 0 ? void 0 : props.$reject) || ((_b = (_a = META === null || META === void 0 ? void 0 : META.collections[name]) === null || _a === void 0 ? void 0 : _a.props) === null || _b === void 0 ? void 0 : _b.$reject)) === true;
-    const _c = yield fetchOne({ name, props, method }).catch(utils_1.produceError), { $req } = _c, result = __rest(_c, ["$req"]);
+    const _c = await fetchOne({ name, props, method }).catch(utils_1.produceError), { $req } = _c, result = __rest(_c, ["$req"]);
     const output = (0, utils_1.omit)(result, ['$req']);
     if ($req)
         emitResponse(output);
     // Delay the response if needed
-    $req && (yield delayResponse($req));
+    $req && await delayResponse($req);
     return output.error === 1 && reject ? Promise.reject(output) : output;
-});
+};
 // ##### Options management #####
-const optionsAdd = (origin, ops) => {
+const shallowMerge = (origin, ops) => {
+    return Object.entries(ops).reduce((acc, [k, v]) => {
+        if ((0, utils_1.isObject)(v)) {
+            acc[k] = Object.assign(Object.assign({}, acc[k]), v);
+        }
+        return acc;
+    }, structuredClone(META.origins.get(origin)));
+};
+const optionsAdd = (origin, ops, merge = false) => {
     const { origins } = META;
     const has = origins.has(origin);
-    if (has && (0, utils_1.isObject)(ops)) {
-        origins.set(origin, ops);
-        return true;
+    const ok = has && (0, utils_1.isObject)(ops);
+    if (ok) {
+        const value = merge === true ? shallowMerge(origin, ops) : ops;
+        origins.set(origin, value);
     }
-    return false;
+    return ok;
 };
 const optionsDrop = (origin) => META.origins.set(origin, {});
 // ##### Origin management #####
-const collectionsAdd = (origin, list) => {
+const collectionsAdd = (origin, list, ops = {}, merge = false) => {
     const entries = Object.entries(list);
     if (!entries.length)
         return false;
@@ -197,10 +197,13 @@ const collectionsAdd = (origin, list) => {
     }, META.collections);
     META.collections = collections;
     META.origins.set(origin, {});
+    if ((0, utils_1.isObject)(ops, true)) {
+        optionsAdd(origin, ops, merge);
+    }
     return true;
 };
 const collectionsDrop = (origin) => {
-    if ((0, utils_1.isString)(origin))
+    if (!(0, utils_1.isString)(origin))
         return false;
     const collections = Object.assign({}, META.collections);
     Object.entries(collections).forEach(([k, v]) => origin === v.origin && delete collections[k]);
