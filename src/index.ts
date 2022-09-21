@@ -64,8 +64,8 @@ function buildReq(name: string, props: Obj, method: FetchMethod): ReqProps {
   return { collection, body, options, props, special, name, hash, multi, spawned }
 }
 
-// TODO: Started throwing compile errors after updating TS // const initiateRequest = (req: ReqProps, url: string) => {
-const initiateRequest = (req: Obj, url: string) => {
+// TODO: Started throwing compile errors after updating TS // const buildFetchArgs = (req: ReqProps, url: string) => {
+const buildFetchArgs = (req: Obj, url: string): { url: string, options: Obj } => {
   const { collection, options, props, body } = req
 
   if (options.method !== 'GET') {
@@ -77,7 +77,15 @@ const initiateRequest = (req: Obj, url: string) => {
     }
   }
 
-  return fetchData(url, options)
+  return { url, options }
+}
+
+const doMock = async (req: ReqProps, fetchArgs: { url: string, options: Obj }) => {
+  const { mock } = req.collection
+  const data = typeof mock === 'function'
+    ? await mock(fetchArgs)
+    : mock
+  return Promise.resolve({ data, MOCK: true })
 }
 
 const requestData = (req?: ReqProps, url?: string) => {
@@ -87,9 +95,10 @@ const requestData = (req?: ReqProps, url?: string) => {
   const useCache = !!(CACHE && req.special.$refresh !== true)
   if (useCache) return Promise.resolve(CACHE)
 
+  const fetchArgs = buildFetchArgs(req, url)
   const promise = 'mock' in req.collection
-    ? Promise.resolve({ data: req.collection.mock, MOCK: true })
-    : initiateRequest(req, url)
+    ? doMock(req, fetchArgs)
+    : fetchData(fetchArgs.url, fetchArgs.options)
 
   fetchStore.reqAdd(req.hash, promise)
 
@@ -108,9 +117,9 @@ const fetchOne = (fetchProps: FetchProps): Promise<any|FetchResponse> => {
     const promise = problems?.length ? Promise.reject({ problems, $req: req }) : requestData(req, url)
 
     return promise
-      .then((v: any) => ({...v, $req: req}))
-      .then((v: any) => processResponse(req || {}, v))
-      .then((v: any) => extractResponse(v, (req?.special.$extract || req?.collection.extract)))
+      .then((v: Obj) => ({...v, $req: req}))
+      .then((v: Obj) => processResponse(req || {}, v))
+      .then((v: Obj) => extractResponse(v, (req?.special.$extract || req?.collection.extract)))
   } catch (err) {
     return Promise.reject(err)
   }
@@ -122,7 +131,7 @@ const fetchMultiple = async (collections: string[], props: Obj) => {
   return collections.reduce((result: Obj, name: string, idx: number) => ({ ...result, [name]: data[idx] }), {})
 }
 
-const processResponse = (req: Obj, response: any) => {
+const processResponse = (req: Obj, response: unknown) => {
   fetchStore.reqRemove(req.hash)
   const data = JSON.parse(JSON.stringify(response))
 
@@ -202,23 +211,29 @@ const collectionsAdd = (origin: string, list: Obj, ops: Obj = {}, merge = false)
   META.collections = collections
   META.origins.set(origin, {})
 
+  // Add origin options, if any
   if (isObject(ops, true)) {
     optionsAdd(origin, ops, merge)
   }
 
   return true
 }
-const collectionsDrop = (origin: string) => {
-  if (!isString(origin)) return false
+
+const collectionsDrop = (list: string[]) => {
+  if (!Array.isArray(list) || !list.length) return false
 
   const collections = { ...META.collections }
-  Object.entries(collections).forEach(([k, v]: [string, any]) => origin === v.origin && delete collections[k])
+  list.forEach((k: string) => k in collections && delete collections[k])
   META.collections = collections
-  META.origins.delete(origin)
+
+  // Clean up emtpy origins
+  const origins = new Set(Object.values(collections).map((v: any) => v.origin))
+  Array.from(META.origins.keys()).forEach(k => !origins.has(k) && META.origins.delete(k))
+
   return true
 }
 
-const collectionsClear = () => {
+const reset = () => {
   META.origins.clear()
   META.collections = {}
   return true
@@ -228,14 +243,13 @@ const collectionsClear = () => {
 // const exposed: Obj = Object.freeze({
 const exposed: Obj = {
   META,
+  reset,
   optionsAdd,
   optionsDrop,
-  collectionsClear,
-  collectionsDrop,
   collectionsAdd,
+  collectionsDrop,
   fetch: (name: string, props: Obj = {}) => fetchAttempt({ name, props })
 }
-// })
 
 const proxy = new Proxy(exposed, {
   get(target: Obj, prop: FetchMethod) {

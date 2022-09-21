@@ -81,8 +81,8 @@ function buildReq(name, props, method) {
     const options = Object.assign(Object.assign(Object.assign(Object.assign({}, originOptions), collection.options), special.$options), { method: method || collection.method, headers: Object.assign(Object.assign(Object.assign(Object.assign({}, originOptions.headers), collection.headers), (_a = special.$options) === null || _a === void 0 ? void 0 : _a.headers), special.$headers) });
     return { collection, body, options, props, special, name, hash, multi, spawned };
 }
-// TODO: Started throwing compile errors after updating TS // const initiateRequest = (req: ReqProps, url: string) => {
-const initiateRequest = (req, url) => {
+// TODO: Started throwing compile errors after updating TS // const buildFetchArgs = (req: ReqProps, url: string) => {
+const buildFetchArgs = (req, url) => {
     const { collection, options, props, body } = req;
     if (options.method !== 'GET') {
         if (collection.isFile) {
@@ -93,7 +93,14 @@ const initiateRequest = (req, url) => {
             options.body = JSON.stringify(body);
         }
     }
-    return (0, utils_1.fetchData)(url, options);
+    return { url, options };
+};
+const doMock = async (req, fetchArgs) => {
+    const { mock } = req.collection;
+    const data = typeof mock === 'function'
+        ? await mock(fetchArgs)
+        : mock;
+    return Promise.resolve({ data, MOCK: true });
 };
 const requestData = (req, url) => {
     if (!req || !url)
@@ -102,9 +109,10 @@ const requestData = (req, url) => {
     const useCache = !!(CACHE && req.special.$refresh !== true);
     if (useCache)
         return Promise.resolve(CACHE);
+    const fetchArgs = buildFetchArgs(req, url);
     const promise = 'mock' in req.collection
-        ? Promise.resolve({ data: req.collection.mock, MOCK: true })
-        : initiateRequest(req, url);
+        ? doMock(req, fetchArgs)
+        : (0, utils_1.fetchData)(fetchArgs.url, fetchArgs.options);
     fetchStore.reqAdd(req.hash, promise);
     return promise;
 };
@@ -197,21 +205,24 @@ const collectionsAdd = (origin, list, ops = {}, merge = false) => {
     }, META.collections);
     META.collections = collections;
     META.origins.set(origin, {});
+    // Add origin options, if any
     if ((0, utils_1.isObject)(ops, true)) {
         optionsAdd(origin, ops, merge);
     }
     return true;
 };
-const collectionsDrop = (origin) => {
-    if (!(0, utils_1.isString)(origin))
+const collectionsDrop = (list) => {
+    if (!Array.isArray(list) || !list.length)
         return false;
     const collections = Object.assign({}, META.collections);
-    Object.entries(collections).forEach(([k, v]) => origin === v.origin && delete collections[k]);
+    list.forEach((k) => k in collections && delete collections[k]);
     META.collections = collections;
-    META.origins.delete(origin);
+    // Clean up emtpy origins
+    const origins = new Set(Object.values(collections).map((v) => v.origin));
+    Array.from(META.origins.keys()).forEach(k => !origins.has(k) && META.origins.delete(k));
     return true;
 };
-const collectionsClear = () => {
+const reset = () => {
     META.origins.clear();
     META.collections = {};
     return true;
@@ -220,14 +231,13 @@ const collectionsClear = () => {
 // const exposed: Obj = Object.freeze({
 const exposed = {
     META,
+    reset,
     optionsAdd,
     optionsDrop,
-    collectionsClear,
-    collectionsDrop,
     collectionsAdd,
+    collectionsDrop,
     fetch: (name, props = {}) => fetchAttempt({ name, props })
 };
-// })
 const proxy = new Proxy(exposed, {
     get(target, prop) {
         if (VIRTUAL_METHODS.has(prop)) {
