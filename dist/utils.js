@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.fetchData = exports.extractResponse = exports.pick = exports.omit = exports.splitProps = exports.propsToCGI = exports.produceError = exports.isObject = exports.isString = void 0;
+exports.fetchData = exports.extractResponse = exports.pick = exports.omit = exports.splitProps = exports.propsToCGI = exports.produceError = exports.cleanOb = exports.isObject = exports.isString = void 0;
 function isString(str, checkEmpty) {
     const isString = typeof str === 'string';
     return checkEmpty !== true ? isString : isString && !!str.length;
@@ -13,18 +13,20 @@ function isObject(val, checkEmpty) {
             ? isOb && !!Object.keys(val).length
             : isOb;
     }
-    catch (err) {
+    catch (_err) {
         return false;
     }
 }
 exports.isObject = isObject;
+const cleanOb = (ob = {}) => Object.assign(Object.create(null), ob);
+exports.cleanOb = cleanOb;
 function produceError(err, result) {
     const { problems = [], $req = null } = err || {};
     const { data = null } = result || {};
     const message = err.message || err.error || err.errors;
     if (message)
         problems.push(message);
-    return Object.assign(Object.assign({}, result), { error: 1, data, problems, $req });
+    return { ...result, error: 1, data, problems, $req };
 }
 exports.produceError = produceError;
 function propsToCGI(options = {}) {
@@ -40,7 +42,7 @@ function propsToCGI(options = {}) {
 exports.propsToCGI = propsToCGI;
 function splitProps(obj) {
     const SPECIAL = ['$done', '$body', '$path', '$refresh', '$reject', '$options', '$headers', '$extract'];
-    const params = Object.assign({}, obj);
+    const params = { ...obj };
     const special = {};
     for (let i = 0; i < SPECIAL.length; i += 1) {
         const key = SPECIAL[i];
@@ -53,7 +55,7 @@ function splitProps(obj) {
 }
 exports.splitProps = splitProps;
 function omit(target, keys = []) {
-    const result = Object.assign({}, target);
+    const result = { ...target };
     for (const key of keys)
         delete result[key];
     return result;
@@ -61,12 +63,12 @@ function omit(target, keys = []) {
 exports.omit = omit;
 function pick(target, keys = []) {
     return isObject(target)
-        ? keys.filter(v => v).reduce((v, k) => (Object.assign(Object.assign({}, v), { [k]: target[k] })), null) || target
+        ? keys.filter(v => v).reduce((v, k) => ({ ...v, [k]: target[k] }), null) || target
         : target;
 }
 exports.pick = pick;
 function extractResponse(reqResponse, extract) {
-    return Object.assign(Object.assign({}, reqResponse), { data: pick(reqResponse.data, extract) });
+    return { ...reqResponse, data: pick(reqResponse.data, extract) };
 }
 exports.extractResponse = extractResponse;
 // ####################### FETCH #######################
@@ -87,7 +89,7 @@ async function fetchData(uri, options = {}) {
         const result = { status, data };
         return status >= 400
             ? produceError({ message: res.statusText }, result)
-            : (data === null || data === void 0 ? void 0 : data.data) === void 0 ? result : Object.assign({ status }, data);
+            : data?.data === void 0 ? result : { status, ...data };
     }
     catch (err) {
         return produceError(err);

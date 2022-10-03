@@ -1,20 +1,22 @@
 import { Obj, ReqProps, FetchError } from './types'
 
-export function isString(str: string, checkEmpty?: boolean) {
+export function isString(str: unknown, checkEmpty?: boolean) {
   const isString = typeof str === 'string'
   return checkEmpty !== true ? isString : isString && !!str.length
 }
 
-export function isObject(val: any, checkEmpty?: boolean) {
+export function isObject(val: unknown, checkEmpty?: boolean) {
   try {
     const isOb = typeof val === 'object' && !Array.isArray(val) && val !== null
     return checkEmpty === true
       ? isOb && !!Object.keys(val).length
       : isOb
-  } catch (err) {
+  } catch (_err) {
     return false
   }
 }
+
+export const cleanOb = (ob: Obj = {}) => Object.assign(Object.create(null), ob)
 
 export function produceError(err: Obj|any, result?: Obj): FetchError {
   const { problems = [], $req = null } = err || {}

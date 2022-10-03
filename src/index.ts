@@ -1,14 +1,17 @@
 import { Obj, ReqProps, PrefetchProps, FetchProps, FetchMethod, FetchResponse, SetupOptions, CollectionOptions, CollectionsOptions } from './types'
 import * as fetchStore from './store'
-import { fetchData, splitProps, propsToCGI, isString, isObject, produceError, omit, extractResponse } from './utils'
+import { fetchData, splitProps, propsToCGI, isString, isObject, produceError, omit, extractResponse, cleanOb } from './utils'
 
-const META: Obj = { origins: new Map(), collections: {}, dispatchAlways: '' }
-const VIRTUAL_METHODS = new Set(['get', 'put', 'post', 'patch', 'delete'])
+// let dispatchAlways = ''
+const EXPOSED: Obj = cleanOb({ origins: new Map(), collections: new Map() })
+const METHODS = new Set(['get', 'put', 'post', 'patch', 'delete'])
 const VERIFY: Obj = {
-  name: { test: (v: string) => v in META.collections, text: "Collection '{{value}}' was not recognized" },
+  name: { test: (v: string) => EXPOSED.collections.has(v), text: "Collection '{{value}}' was not recognized" },
   url: { text: "Collection '{{value}}' has no URL" },
   method:{ text: "Collection '{{value}}' has no method" },
 }
+
+// ######################### CODE #########################
 
 const buildURL = (req: ReqProps, method: FetchMethod) => {
   const { origin = '', url } = req.collection
@@ -19,7 +22,7 @@ const buildURL = (req: ReqProps, method: FetchMethod) => {
 
 function buildInfo(fetchProps: FetchProps): PrefetchProps {
   const { name, props } = fetchProps
-  const collection = META.collections[name]
+  const collection = EXPOSED.collections.get(name)
   const method = (fetchProps.method || collection?.method || '').toUpperCase()
   const problems = verifyInfo({ name, method, url: collection?.url })
 
@@ -41,13 +44,13 @@ function verifyInfo(info: Obj) {
 }
 
 function buildReq(name: string, props: Obj, method: FetchMethod): ReqProps {
-  const collection: CollectionOptions = META.collections[name]
+  const collection: CollectionOptions = EXPOSED.collections.get(name)
   const { params, special } = splitProps(props)
   const hash = `${name}+++${JSON.stringify(params)}`
   const body = special.$body || { ...collection.props, ...params }
   const multi = Array.isArray(collection.collections) && Boolean(collection.collections.length)
   const spawned = Date.now()
-  const originOptions = META.origins.get(collection.origin)
+  const originOptions = EXPOSED.origins.get(collection.origin)
   const options = {
     ...originOptions,
     ...collection.options,
@@ -109,7 +112,7 @@ const fetchOne = (fetchProps: FetchProps): Promise<any|FetchResponse> => {
   try {
     const { req, url, problems } = buildInfo(fetchProps)
     const existing = fetchStore.reqHas(req?.hash)
-    const { collections = [] } = META.collections[fetchProps.name] || {}
+    const { collections = [] } = EXPOSED.collections.get(fetchProps.name) || {}
 
     if (collections.length) return fetchMultiple(collections, fetchProps.props)
     if (existing) return existing // Intercept a matching unresolved request and use its Promise
@@ -153,8 +156,8 @@ const delayResponse = async (req: Obj) => {
   return true
 }
 
-function emitResponse(detail: any) {
-  const always = META.dispatchAlways
+function emitResponse(detail: unknown) {
+  const always = EXPOSED.dispatchAlways
   const emit = globalThis.dispatchEvent
 
   return Boolean(always && emit && emit(new CustomEvent(always, { detail })))
@@ -162,7 +165,7 @@ function emitResponse(detail: any) {
 
 const fetchAttempt = async (params: FetchProps) => {
   const { name, props = {}, method } = params
-  const reject = (props?.$reject || META?.collections[name]?.props?.$reject) === true
+  const reject = (props?.$reject || EXPOSED.collections.get(name)?.props?.$reject) === true
   const { $req, ...result } = await fetchOne({name, props, method}).catch(produceError)
   const output = omit(result, ['$req'])
 
@@ -177,15 +180,14 @@ const fetchAttempt = async (params: FetchProps) => {
 // ##### Options management #####
 const shallowMerge = (origin: string, ops: Obj) => {
   return Object.entries(ops).reduce((acc: Obj, [k, v]: [string, any]) => {
-    if (isObject(v)) {
-      acc[k] = { ...acc[k], ...v }
-    }
-    
+    acc[k] = isObject(v)
+      ? { ...acc[k], ...v }
+      : v
     return acc
-  }, structuredClone(META.origins.get(origin)))
+  }, structuredClone(EXPOSED.origins.get(origin)))
 }
-const optionsAdd = (origin: string, ops: Obj, merge = false) => {
-  const { origins } = META
+const optionsChange = (origin: string, ops: Obj, merge = false) => {
+  const { origins } = EXPOSED
   const has = origins.has(origin)
   const ok = has && isObject(ops)
 
@@ -196,77 +198,97 @@ const optionsAdd = (origin: string, ops: Obj, merge = false) => {
 
   return ok
 }
-const optionsDrop = (origin: string) => META.origins.set(origin, {})
 
 // ##### Origin management #####
 const collectionsAdd = (origin: string, list: Obj, ops: Obj = {}, merge = false) => {
   const entries = Object.entries(list)
 
-  if (!entries.length) return false
+  if (typeof origin !== 'string' || !entries?.length) return false
 
-  const collections = entries.reduce((acc: CollectionsOptions, [k, v]: [string, any]) => {
-    return Object.assign(acc, { [k]: { ...v, origin } })
-  }, META.collections)
-
-  META.collections = collections
-  META.origins.set(origin, {})
+  const { collections } = EXPOSED
+  EXPOSED.origins.set(origin, {})
+  entries.forEach(([k, v]: [string, any]) => collections.set(k, { ...v, origin}))
 
   // Add origin options, if any
   if (isObject(ops, true)) {
-    optionsAdd(origin, ops, merge)
+    optionsChange(origin, ops, merge)
   }
 
   return true
 }
 
-const collectionsDrop = (list: string[]) => {
-  if (!Array.isArray(list) || !list.length) return false
+const collectionsDrop = (list: string|string[]): boolean => {
+  const arr = isString(list, true) ? [list] : list
 
-  const collections = { ...META.collections }
-  list.forEach((k: string) => k in collections && delete collections[k])
-  META.collections = collections
+  if (!Array.isArray(arr) || !arr.length) return false
+
+  const { origins, collections } = EXPOSED
+  const ok = arr.every((k: unknown) => collections.delete(k))
 
   // Clean up emtpy origins
-  const origins = new Set(Object.values(collections).map((v: any) => v.origin))
-  Array.from(META.origins.keys()).forEach(k => !origins.has(k) && META.origins.delete(k))
+  const originsFound = new Set([...collections.values()].map((v: any) => v.origin))
+  Array.from(origins.keys()).forEach(k => !originsFound.has(k) && origins.delete(k))
 
-  return true
+  return ok
+}
+
+const originsDrop = (list: string|string[]): boolean => {
+  const arr = isString(list, true) ? [list] : list
+
+  if (Array.isArray(arr)) {
+    const filtered = arr.filter(v => isString(v, true))
+    const regex = new RegExp(`^${filtered.join('|')}$`)
+    const { origins, collections } = EXPOSED
+
+    collections.forEach((v: any, k: string) => regex.test(v.origin) && collections.delete(k))
+    return filtered.map(v => origins.delete(v)).every(v => v === true)
+  }
+  
+  return false
 }
 
 const reset = () => {
-  META.origins.clear()
-  META.collections = {}
+  EXPOSED.origins.clear()
+  EXPOSED.collections.clear()
   return true
 }
 
-// ##### The proxy #####
-// const exposed: Obj = Object.freeze({
-const exposed: Obj = {
-  META,
-  reset,
-  optionsAdd,
-  optionsDrop,
-  collectionsAdd,
-  collectionsDrop,
-  fetch: (name: string, props: Obj = {}) => fetchAttempt({ name, props })
+Object.defineProperties(EXPOSED.collections, {
+  add: { value: collectionsAdd },
+  drop: { value: collectionsDrop }
+})
+
+Object.defineProperties(EXPOSED.origins, {
+  drop: { value: originsDrop },
+  change: { value: optionsChange }
+})
+
+// Come up with a better solution. Proxies are fun
+// We don't have to expose all the getters and setters
+const buildDispatchAlways = () => {
+  let value = ''
+  return {
+    dispatchAlways: {
+      get: () => value,
+      set: (candidate: string) => {
+        if (isString(candidate, true)) value = candidate
+      }
+    }
+  }
 }
 
-const proxy = new Proxy(exposed, {
-  get(target: Obj, prop: FetchMethod) {
-    if (VIRTUAL_METHODS.has(prop)) {
-      return (name: string, props: Obj = {}) => fetchAttempt({ name, props, method: prop })
-    } else if (prop in target) {
-      return target[prop]
-    }
-  },
-  // TODO: Find a better way to accomodate this 'always' thing
-  set(target: Obj, key: string, value: any) {
-    if (key === 'dispatchAlways' && isString(value, true)) {
-      META.dispatchAlways = value
-      return true
-    }
+// Extend the exposed object before giving it to the proxy
+Object.defineProperties(EXPOSED, buildDispatchAlways())
+Object.freeze(Object.assign(EXPOSED, {
+  reset,
+  fetch: (name: string, props: Obj = {}) => fetchAttempt({ name, props })
+}))
 
-    return false
+const proxy = new Proxy(EXPOSED, {
+  get(target: Obj, prop: FetchMethod) {
+    return METHODS.has(prop)
+      ? (name: string, props: Obj = {}) => fetchAttempt({ name, props, method: prop })
+      : target[prop]
   }
 })
 

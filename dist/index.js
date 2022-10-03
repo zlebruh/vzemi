@@ -22,27 +22,18 @@ var __importStar = (this && this.__importStar) || function (mod) {
     __setModuleDefault(result, mod);
     return result;
 };
-var __rest = (this && this.__rest) || function (s, e) {
-    var t = {};
-    for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p) && e.indexOf(p) < 0)
-        t[p] = s[p];
-    if (s != null && typeof Object.getOwnPropertySymbols === "function")
-        for (var i = 0, p = Object.getOwnPropertySymbols(s); i < p.length; i++) {
-            if (e.indexOf(p[i]) < 0 && Object.prototype.propertyIsEnumerable.call(s, p[i]))
-                t[p[i]] = s[p[i]];
-        }
-    return t;
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 const fetchStore = __importStar(require("./store"));
 const utils_1 = require("./utils");
-const META = { origins: new Map(), collections: {}, dispatchAlways: '' };
-const VIRTUAL_METHODS = new Set(['get', 'put', 'post', 'patch', 'delete']);
+// let dispatchAlways = ''
+const EXPOSED = (0, utils_1.cleanOb)({ origins: new Map(), collections: new Map() });
+const METHODS = new Set(['get', 'put', 'post', 'patch', 'delete']);
 const VERIFY = {
-    name: { test: (v) => v in META.collections, text: "Collection '{{value}}' was not recognized" },
+    name: { test: (v) => EXPOSED.collections.has(v), text: "Collection '{{value}}' was not recognized" },
     url: { text: "Collection '{{value}}' has no URL" },
     method: { text: "Collection '{{value}}' has no method" },
 };
+// ######################### CODE #########################
 const buildURL = (req, method) => {
     const { origin = '', url } = req.collection;
     const result = origin + url + (req.special.$path || '');
@@ -51,9 +42,9 @@ const buildURL = (req, method) => {
 };
 function buildInfo(fetchProps) {
     const { name, props } = fetchProps;
-    const collection = META.collections[name];
-    const method = (fetchProps.method || (collection === null || collection === void 0 ? void 0 : collection.method) || '').toUpperCase();
-    const problems = verifyInfo({ name, method, url: collection === null || collection === void 0 ? void 0 : collection.url });
+    const collection = EXPOSED.collections.get(name);
+    const method = (fetchProps.method || collection?.method || '').toUpperCase();
+    const problems = verifyInfo({ name, method, url: collection?.url });
     if (problems.length)
         return { problems };
     const req = buildReq(name, props, method);
@@ -70,15 +61,25 @@ function verifyInfo(info) {
     }).filter(Boolean);
 }
 function buildReq(name, props, method) {
-    var _a;
-    const collection = META.collections[name];
+    const collection = EXPOSED.collections.get(name);
     const { params, special } = (0, utils_1.splitProps)(props);
     const hash = `${name}+++${JSON.stringify(params)}`;
-    const body = special.$body || Object.assign(Object.assign({}, collection.props), params);
+    const body = special.$body || { ...collection.props, ...params };
     const multi = Array.isArray(collection.collections) && Boolean(collection.collections.length);
     const spawned = Date.now();
-    const originOptions = META.origins.get(collection.origin);
-    const options = Object.assign(Object.assign(Object.assign(Object.assign({}, originOptions), collection.options), special.$options), { method: method || collection.method, headers: Object.assign(Object.assign(Object.assign(Object.assign({}, originOptions.headers), collection.headers), (_a = special.$options) === null || _a === void 0 ? void 0 : _a.headers), special.$headers) });
+    const originOptions = EXPOSED.origins.get(collection.origin);
+    const options = {
+        ...originOptions,
+        ...collection.options,
+        ...special.$options,
+        method: method || collection.method,
+        headers: {
+            ...originOptions.headers,
+            ...collection.headers,
+            ...special.$options?.headers,
+            ...special.$headers
+        },
+    };
     return { collection, body, options, props, special, name, hash, multi, spawned };
 }
 // TODO: Started throwing compile errors after updating TS // const buildFetchArgs = (req: ReqProps, url: string) => {
@@ -119,17 +120,17 @@ const requestData = (req, url) => {
 const fetchOne = (fetchProps) => {
     try {
         const { req, url, problems } = buildInfo(fetchProps);
-        const existing = fetchStore.reqHas(req === null || req === void 0 ? void 0 : req.hash);
-        const { collections = [] } = META.collections[fetchProps.name] || {};
+        const existing = fetchStore.reqHas(req?.hash);
+        const { collections = [] } = EXPOSED.collections.get(fetchProps.name) || {};
         if (collections.length)
             return fetchMultiple(collections, fetchProps.props);
         if (existing)
             return existing; // Intercept a matching unresolved request and use its Promise
-        const promise = (problems === null || problems === void 0 ? void 0 : problems.length) ? Promise.reject({ problems, $req: req }) : requestData(req, url);
+        const promise = problems?.length ? Promise.reject({ problems, $req: req }) : requestData(req, url);
         return promise
-            .then((v) => (Object.assign(Object.assign({}, v), { $req: req })))
+            .then((v) => ({ ...v, $req: req }))
             .then((v) => processResponse(req || {}, v))
-            .then((v) => (0, utils_1.extractResponse)(v, ((req === null || req === void 0 ? void 0 : req.special.$extract) || (req === null || req === void 0 ? void 0 : req.collection.extract))));
+            .then((v) => (0, utils_1.extractResponse)(v, (req?.special.$extract || req?.collection.extract)));
     }
     catch (err) {
         return Promise.reject(err);
@@ -138,13 +139,12 @@ const fetchOne = (fetchProps) => {
 const fetchMultiple = async (collections, props) => {
     const list = collections.map((name) => fetchAttempt({ name, props: props[name] }));
     const data = await Promise.all(list);
-    return collections.reduce((result, name, idx) => (Object.assign(Object.assign({}, result), { [name]: data[idx] })), {});
+    return collections.reduce((result, name, idx) => ({ ...result, [name]: data[idx] }), {});
 };
 const processResponse = (req, response) => {
-    var _a;
     fetchStore.reqRemove(req.hash);
     const data = JSON.parse(JSON.stringify(response));
-    if (((_a = req.collection) === null || _a === void 0 ? void 0 : _a.cache) === 'ram')
+    if (req.collection?.cache === 'ram')
         fetchStore.cacheAdd(req.hash, data);
     return data;
 };
@@ -159,15 +159,14 @@ const delayResponse = async (req) => {
     return true;
 };
 function emitResponse(detail) {
-    const always = META.dispatchAlways;
+    const always = EXPOSED.dispatchAlways;
     const emit = globalThis.dispatchEvent;
     return Boolean(always && emit && emit(new CustomEvent(always, { detail })));
 }
 const fetchAttempt = async (params) => {
-    var _a, _b;
     const { name, props = {}, method } = params;
-    const reject = ((props === null || props === void 0 ? void 0 : props.$reject) || ((_b = (_a = META === null || META === void 0 ? void 0 : META.collections[name]) === null || _a === void 0 ? void 0 : _a.props) === null || _b === void 0 ? void 0 : _b.$reject)) === true;
-    const _c = await fetchOne({ name, props, method }).catch(utils_1.produceError), { $req } = _c, result = __rest(_c, ["$req"]);
+    const reject = (props?.$reject || EXPOSED.collections.get(name)?.props?.$reject) === true;
+    const { $req, ...result } = await fetchOne({ name, props, method }).catch(utils_1.produceError);
     const output = (0, utils_1.omit)(result, ['$req']);
     if ($req)
         emitResponse(output);
@@ -178,14 +177,14 @@ const fetchAttempt = async (params) => {
 // ##### Options management #####
 const shallowMerge = (origin, ops) => {
     return Object.entries(ops).reduce((acc, [k, v]) => {
-        if ((0, utils_1.isObject)(v)) {
-            acc[k] = Object.assign(Object.assign({}, acc[k]), v);
-        }
+        acc[k] = (0, utils_1.isObject)(v)
+            ? { ...acc[k], ...v }
+            : v;
         return acc;
-    }, structuredClone(META.origins.get(origin)));
+    }, structuredClone(EXPOSED.origins.get(origin)));
 };
-const optionsAdd = (origin, ops, merge = false) => {
-    const { origins } = META;
+const optionsChange = (origin, ops, merge = false) => {
+    const { origins } = EXPOSED;
     const has = origins.has(origin);
     const ok = has && (0, utils_1.isObject)(ops);
     if (ok) {
@@ -194,66 +193,80 @@ const optionsAdd = (origin, ops, merge = false) => {
     }
     return ok;
 };
-const optionsDrop = (origin) => META.origins.set(origin, {});
 // ##### Origin management #####
 const collectionsAdd = (origin, list, ops = {}, merge = false) => {
     const entries = Object.entries(list);
-    if (!entries.length)
+    if (typeof origin !== 'string' || !entries?.length)
         return false;
-    const collections = entries.reduce((acc, [k, v]) => {
-        return Object.assign(acc, { [k]: Object.assign(Object.assign({}, v), { origin }) });
-    }, META.collections);
-    META.collections = collections;
-    META.origins.set(origin, {});
+    const { collections } = EXPOSED;
+    EXPOSED.origins.set(origin, {});
+    entries.forEach(([k, v]) => collections.set(k, { ...v, origin }));
     // Add origin options, if any
     if ((0, utils_1.isObject)(ops, true)) {
-        optionsAdd(origin, ops, merge);
+        optionsChange(origin, ops, merge);
     }
     return true;
 };
 const collectionsDrop = (list) => {
-    if (!Array.isArray(list) || !list.length)
+    const arr = (0, utils_1.isString)(list, true) ? [list] : list;
+    if (!Array.isArray(arr) || !arr.length)
         return false;
-    const collections = Object.assign({}, META.collections);
-    list.forEach((k) => k in collections && delete collections[k]);
-    META.collections = collections;
+    const { origins, collections } = EXPOSED;
+    const ok = arr.every((k) => collections.delete(k));
     // Clean up emtpy origins
-    const origins = new Set(Object.values(collections).map((v) => v.origin));
-    Array.from(META.origins.keys()).forEach(k => !origins.has(k) && META.origins.delete(k));
-    return true;
+    const originsFound = new Set([...collections.values()].map((v) => v.origin));
+    Array.from(origins.keys()).forEach(k => !originsFound.has(k) && origins.delete(k));
+    return ok;
+};
+const originsDrop = (list) => {
+    const arr = (0, utils_1.isString)(list, true) ? [list] : list;
+    if (Array.isArray(arr)) {
+        const filtered = arr.filter(v => (0, utils_1.isString)(v, true));
+        const regex = new RegExp(`^${filtered.join('|')}$`);
+        const { origins, collections } = EXPOSED;
+        collections.forEach((v, k) => regex.test(v.origin) && collections.delete(k));
+        return filtered.map(v => origins.delete(v)).every(v => v === true);
+    }
+    return false;
 };
 const reset = () => {
-    META.origins.clear();
-    META.collections = {};
+    EXPOSED.origins.clear();
+    EXPOSED.collections.clear();
     return true;
 };
-// ##### The proxy #####
-// const exposed: Obj = Object.freeze({
-const exposed = {
-    META,
-    reset,
-    optionsAdd,
-    optionsDrop,
-    collectionsAdd,
-    collectionsDrop,
-    fetch: (name, props = {}) => fetchAttempt({ name, props })
+Object.defineProperties(EXPOSED.collections, {
+    add: { value: collectionsAdd },
+    drop: { value: collectionsDrop }
+});
+Object.defineProperties(EXPOSED.origins, {
+    drop: { value: originsDrop },
+    change: { value: optionsChange }
+});
+// Come up with a better solution. Proxies are fun
+// We don't have to expose all the getters and setters
+const buildDispatchAlways = () => {
+    let value = '';
+    return {
+        dispatchAlways: {
+            get: () => value,
+            set: (candidate) => {
+                if ((0, utils_1.isString)(candidate, true))
+                    value = candidate;
+            }
+        }
+    };
 };
-const proxy = new Proxy(exposed, {
+// Extend the exposed object before giving it to the proxy
+Object.defineProperties(EXPOSED, buildDispatchAlways());
+Object.freeze(Object.assign(EXPOSED, {
+    reset,
+    fetch: (name, props = {}) => fetchAttempt({ name, props })
+}));
+const proxy = new Proxy(EXPOSED, {
     get(target, prop) {
-        if (VIRTUAL_METHODS.has(prop)) {
-            return (name, props = {}) => fetchAttempt({ name, props, method: prop });
-        }
-        else if (prop in target) {
-            return target[prop];
-        }
-    },
-    // TODO: Find a better way to accomodate this 'always' thing
-    set(target, key, value) {
-        if (key === 'dispatchAlways' && (0, utils_1.isString)(value, true)) {
-            META.dispatchAlways = value;
-            return true;
-        }
-        return false;
+        return METHODS.has(prop)
+            ? (name, props = {}) => fetchAttempt({ name, props, method: prop })
+            : target[prop];
     }
 });
 exports.default = proxy;
