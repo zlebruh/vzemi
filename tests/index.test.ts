@@ -63,6 +63,18 @@ import zemi from '../src/index'
 // }, {headers: { TURBO___AUTH: 'I AM VERY AUTHORIZED OH YE' }})
 
 describe('ZEMI - index.js', () => {
+  const HOST_A = 'http://localhost:1001'
+  const HOST_B = 'http://turbo.hostyessss'
+  const HOST_C = 'https://dir.bg'
+  
+  const HEADERS_A = { auth: 'I AM VERY AUTHORIZED OH YE' }
+
+  const COL_A = { url: '/path-A', method: 'GET' }
+  const COL_B = { url: '/path-B', method: 'POST', mock: [111, 222, 333], delayAtLeast: 5000 }
+  const COL_C = { url: '/path-C', method: 'PUT' }
+  const COL_D = { url: '/path-D', method: 'POST' }
+  const COL_Z = { url: '/path-Z', method: 'POST', mock: (req: unknown) => req }
+
   describe('Proxy sanity check', () => {
     it('All props exist and are of the correct type', () => {
       expect(zemi.origins instanceof Map).toBe(true)
@@ -91,17 +103,7 @@ describe('ZEMI - index.js', () => {
     })
   })
 
-  describe('Collections management', () => {
-    const HOST_A = 'http://localhost:1001'
-    const HOST_B = 'http://turbo.hostyessss'
-    const HOST_C = 'https://dir.bg'
-
-    const COL_A = { url: '/path-A', method: 'GET' }
-    const COL_B = { url: '/path-B', method: 'POST', mock: [111, 222, 333], delayAtLeast: 5000 }
-    const COL_C = { url: '/path-C', method: 'PUT' }
-    const COL_D = { url: '/path-D', method: 'POST' }
-    const COL_Z = { url: '/path-Z', method: 'POST', mock: (req: unknown) => req }
-
+  describe('Collections management and "origins" side effects', () => {
     // ##### COLLECTIONS ADD #####
     it('Add one collection', () => {
       zemi.collections.add(HOST_A, { COL_A })
@@ -151,54 +153,129 @@ describe('ZEMI - index.js', () => {
 
       expect(list.every(zemi.collections.drop)).toBe(true)
       expect(zemi.collections.size).toBe(initialCollections - 2)
-
-      // expect(0).toBe(0)
     })
   })
 
   // ######################################
 
   describe('Origins management', () => {
-    it('Side effects #1', () => {
-      expect(0).toBe(0)
+    beforeEach(zemi.reset)
+
+    it('Side effects sanity check', () => {
+      zemi.collections.add(HOST_A, { COL_A })
+      expect(zemi.collections.get('COL_A')).toBeDefined()
+      expect(zemi.collections.size).toBe(1)
+      expect(zemi.origins.size).toBe(1)
     })
 
-    it('Side effects #2', () => {
-      expect(0).toBe(0)
+    it('Change options - replace', () => {
+      const changes = { replacer: true }
+      const options = { headers: HEADERS_A }
+
+      zemi.collections.add(HOST_A, { COL_C }, options)
+      expect(zemi.origins.get(HOST_A)).toStrictEqual(options)
+
+      // Actual test
+      zemi.origins.change(HOST_A, changes)
+      expect(zemi.origins.get(HOST_A)).toBe(changes)
     })
 
-    it('Side effects #31', () => {
-      expect(0).toBe(0)
+    it('Change options - merge', () => {
+      const changes = { replacer: true }
+      const options = { headers: HEADERS_A }
+      const latest = () => zemi.origins.get(HOST_A)
+
+      zemi.collections.add(HOST_A, { COL_C }, options)
+      expect(latest()).toStrictEqual(options)
+
+      // Actual test
+      zemi.origins.change(HOST_A, changes, true)
+      expect(latest()).toEqual({ ...latest(), ...changes })
     })
 
-    it('Add options', () => {
-      expect(0).toBe(0)
+    it('Reset origin options', () => {
+      zemi.collections.add(HOST_A, { COL_C }, {})
+      expect(zemi.origins.get(HOST_A)).toEqual({})
     })
 
-    it('Replace options', () => {
-      expect(0).toBe(0)
-    })
+    describe('Dropping origins (and their collection)', () => {
+      const hosts: string[] = [HOST_A, HOST_B, HOST_C]
+      const addAndCheckMultiHostCollections = () => {
+        zemi.collections.add(HOST_A, { COL_A })
+        zemi.collections.add(HOST_B, { COL_B })
+        zemi.collections.add(HOST_C, { COL_C, COL_Z })
 
-    it('Merge options', () => {
-      expect(0).toBe(0)
-    })
+        expect(zemi.collections.size).toBe(4)
+        expect(zemi.origins.size).toBe(3)
+      }
 
-    it('Drop options', () => {
-      expect(0).toBe(0)
+      it('Drop origin', () => {
+        zemi.collections.add(HOST_A, { COL_C })
+        expect(zemi.origins.drop(HOST_A)).toBe(true)
+      })
+
+      it('Drop multiple origins - manually #1', () => {
+        // Sanity check
+        addAndCheckMultiHostCollections()
+  
+        // Actual test
+        const allGone = hosts.every(v => zemi.origins.drop(v) === true)
+        expect(allGone).toBe(true)
+        expect(zemi.collections.size).toBe(0)
+        expect(zemi.origins.size).toBe(0)
+      })
+
+      it('Drop multiple origins - manually #2', () => {
+        // Sanity check
+        addAndCheckMultiHostCollections()
+  
+        // Actual test
+        const initCollections = zemi.collections.size
+        const initOrigins = zemi.origins.size
+
+        zemi.origins.drop(HOST_A)
+        expect(zemi.collections.size).toBe(initCollections - 1)
+        expect(zemi.origins.size).toBe(initOrigins - 1)
+
+        zemi.origins.drop(HOST_B)
+        expect(zemi.collections.size).toBe(initCollections - 2)
+        expect(zemi.origins.size).toBe(initOrigins - 2)
+
+        zemi.origins.drop(HOST_C)
+        expect(zemi.collections.size).toBe(initCollections - 4)
+        expect(zemi.origins.size).toBe(initOrigins - 3)
+      })
+  
+      it('Drop multiple origins - using an array', () => {
+        // Sanity check
+        addAndCheckMultiHostCollections()
+  
+        // Actual test
+        zemi.origins.drop(hosts)
+        expect(zemi.collections.size).toBe(0)
+        expect(zemi.origins.size).toBe(0)
+      })
+  
+      it('Drop unexisting origins', () => {
+        // Checking random names
+        const unexisting: string[] = ['aaa', 'bbb', 'ccc']
+        unexisting.forEach(v => expect(zemi.origins.drop(v)).toBe(false))
+  
+        // Ensure sanity yet again
+        const options = { headers: HEADERS_A }
+        zemi.collections.add(HOST_A, { COL_C }, options)
+        expect(zemi.origins.get(HOST_A)).toStrictEqual(options)
+  
+        // Actual test and one more for sanity's sake
+        expect(zemi.origins.drop(HOST_A)).toBe(true)
+        expect(zemi.origins.drop(HOST_A)).toBe(false)
+      })
     })
   })
 
-  // describe('QQQTTTT', () => {
+  // describe('AAAAA', () => {
   //   it('WWW', () => {
   //     expect(0).toBe(0)
   //   })
-  // })
-
-  // test('SERVICE OK #1', () => {
-  //   const types = ['origins', 'collections', 'fetch', 'reset', 'dispatchAlways']
-
-  //   // console.warn('ZEMI', zemi)
-
-  //   expect('dummy').toBe('dummy')
   // })
 })
