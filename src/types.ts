@@ -1,13 +1,13 @@
 export interface GenericObj { [key: string]: any }
-export type FetchResponse = {
-  error: 0 | 1;
-  data: unknown | null;
-  status?: number;
-  problems?: string[];
-  collection?: string;
+export interface FetchResponse {
+  MOCK?: boolean
+  data: unknown | null,
+  status?: number
+  error?: 1,
+  problems?: string[],
 }
 
-export type FetchErrorOutput = FetchResponse & { error: 1 }
+export interface FetchErrorOutput extends FetchResponse { error: 1 }
 
 export type FetchErrorInput = {
   problems?: string[]

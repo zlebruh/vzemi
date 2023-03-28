@@ -1,122 +1,119 @@
-# zemi
-Data fetching service for REST APIs
+# vzemi
 
-## Usage
+vzemi provides a wrapper for the global fetch method.
+
+It exposes a Proxy object with two instances of Map: `endpoints` and `origins`.
+
+## Quick usage
+
 ```javascript
-import zemi from 'zemi';
+import vzemi from "vzemi"
 
-zemi.setup({ collections: myCollections });
+vzemi.endpoints.set("books", { uri: "/jumbo/books" })
 
-await zemi.fetch('SOME_COLLECTION_NAME', {...});
+await vzemi.get("books", { index: 0, size: 100 })
+await vzemi.put("books", { index: 0, size: 100 })
+await vzemi.post("books", { index: 0, size: 100 })
+await vzemi.patch("books", { index: 0, size: 100 })
+await vzemi.delete("books", { index: 0, size: 100 })
+await vzemi.fetch("books", { index: 0, size: 100 })
+
+// FetchResponse: {
+//   MOCK?: boolean
+//   data: unknown | null,
+//   error?: 1,
+//   problems?: string[],
+// }
 ```
 
-# Configuration
-## All **setup** options
+<br>
+
+## A word on the vzemi's structure
+
+Both `origins` and `endpoints` are extend the regular old Map.
+
+- `endpoints` can be managed via the set, setMany, and clear methods for one or
+  multiple EndPoint objects.
+- `origins` can be managed via the set, setMany, and clear methods for one or
+  multiple RequestInit objects.
+
+<br>
+
+## Endpoints
+An EndPoint is just an object helper for HTTP requests. Its contents are used
+and/or merged when fetching data.
+
 ```typescript
-zemi.setup({
-  // User provided string is used to dispatch a CustomEvent instance after every fetch
-  always?: string,
+interface EndPoint {
+  // This can be any full or relative path
+  uri: string
 
-  // Set a list of global options and headers used for every request
-  // Each of those can be overwritten by collections and requests
-  options?: {
-    headers: {
-      no: 'more',
-      hanging: 'wires',
-      bearer: 'HASH' // Your token or null to disable the header
-    }
-  }
+  // Optional. vzemi.fetch defaults to this value. vzemi.get/post/etc. all override this value
+  method?: string
 
-  // Your collections. Each one has a name and a few basic props such as
-  collections?: {
-    [key: string]: {
-      // This can be any full or relative path
-      url: string,
+  // Optional. Predefined props that you might have for this endpoint
+  // Merged with request-specific params
+  props?: {}
 
-      // Optional but highly recommended
-      method?: string,
+  // Optional. The actual fetch RequestInit object that includes headers, mode, etc
+  // Merged with origin-specific options
+  options?: {}
 
-      // Optional. 'ram' is the only accepted value at this time
-      cache?: string,
+  // Optional. Merged with origin-specific headers.
+  // Can be overwritten while making this request via '$headers'
+  headers?: {}
 
-      // Optional. The actual fetch RequestInit object that includes headers and stuff
-      options?: object,
-
-      // Optional. Collection-specific headers.
-      // Merged with domain-specific headers. Can be overwritten while making this request via '$headers'
-      headers?: object,
-
-      // You can assign anything to the `mock` property
-      // Whatever you put here will be your `data` property
-      mock?: {some: [1, 22, 333], more: 'stuff', aaa: 111, bbb: 222, ccc: {ama: 'zing'}},
-
-      // Extract a list of props from the response. Think of it as "pick"
-      extract?: ['thing1', 'anotherThing'], // string[]
-      
-      // Delay a request by ms. Applies to mocked and failed ones
-      // Skipped when the request takes longer than provided integer
-      // Time it took the request is substracted from provided integer
-      delayAtLeast?: number,
-
-      // You can also upload files
-      uploadFile?: {
-        url: '/upload',
-        method: 'POST',
-        isFile: true,
-      },
-
-      // You may use collections of aggregated collections
-      allInfo: {
-        collections: [
-          // No such collections. Someone forgot them here...
-          'about', 'info',
-
-          // These are real ones
-          'employees', 'employee', 'create', 'update', 'delete',
-        ],
-      },
-    }
-  }
-});
+  // Optional. Whatever you put here will be your `data` property
+  mock?: {some: [1, 22, 333], more: 'stuff', aaa: 111, bbb: 222, ccc: {ama: 'zing'}},
+  // OR... it can also be a function that recevies what `fetch` receives
+  mock?: (uri: string, options: {}, endpointName: string) => ()
+}
 ```
 
-## Simple Configuration - Define your collections / end-points
-```javascript
-const myCollections = {
-  unfinished: {
-    url: 'http://non.finished-api.yourdomain.com/api/v3/something',
-    method: 'GET',
-    mock: {some: [1, 22, 333], more: 'stuff', aaa: 111, bbb: 222, ccc: {ama: 'zing'}},
-    extract: ['some', 'ccc']
-    delayAtLeast: 5000
+### Set one
+```typescript
+vzemi.endpoints.set("books", { uri: "/jumbo/books" })
+```
+
+### Set multiple
+```typescript
+zemi.endpoints.setMany({
+  endpoint1: { uri: "https://example.com/endpoint1" },
+  endpoint2: { uri: "https://example.com/endpoint2", method: "POST" },
+})
+```
+<br>
+
+## Origins
+Before a request is being made, vzemi matches an EndPoint's uri to an existing key in `origins`.
+
+This way, we can easily scope different header, credentials, or any other options, to an origin.
+
+### Set one
+```typescript
+vzemi.origins.set("/", { cache: "force-cache" })
+```
+
+### Set multiple
+```typescript
+zemi.origins.setMany({
+  "/": {
+    mode: "cors",
+    headers: { LEVEL_0_H: "0_hehehe" },
   },
-  employee: {
-    url: 'http://dummy.restapiexample.com/api/v1/employee/1',
-    method: 'GET',
-    cache: 'ram'
+  "http://localhost:1001": {
+    mode: "no-cors",
+    cache: "force-cache",
+    signal: null,
+    boo2: "222_shakalaka",
+    headers: { auth: "DIESEL_123" },
   },
-  creater: {
-    url: 'http://dummy.restapiexample.com/api/v1/create',
-    method: 'POST',
-  },
-  updater: {
-    url: 'http://dummy.restapiexample.com/api/v1/update/21',
-    method: 'PUT',
-  },
-  patcher: {
-    url: 'http://dummy.restapiexample.com/api/v1/update/21',
-    method: 'patch',
-  },
-  deleter: {
-    url: 'http://dummy.restapiexample.com/api/v1/delete/2',
-    method: 'DELETE',
-  },
-};
+})
 ```
 
 ## Usage and special props - everything is optional
-```javascript
 
+```typescript
 const mai_data = await fff.fetch('employee', {
   // Your props are transformed to either CGI in the URL or body payload
   a: 1,
@@ -128,11 +125,6 @@ const mai_data = await fff.fetch('employee', {
   // When used, its value will replace your regular non-special props
   // which are usually used as your body payload
   $body: {},
-  
-  // Causes the fetcher to reject failed attempts
-  // Be default, we don't do that and simply resolve
-  // Exmaple: {error: 1, message: 'Bla bla bla', data: null}
-  $reject: true,
 
   // Merged into a collection's url
   $path: '/aaa/bbb/ccc',
@@ -146,78 +138,29 @@ const mai_data = await fff.fetch('employee', {
   // AND the headers in the collection itself
   $headers: {x: 1, y: 2, z: 3},
 
-  // Cached collection response, if any, is being ignored and a new request is being made.
-  // If successful, any prior cache is updated
-  $refresh: true,
-
-  // Replaces the collection `extract` property, if any
-  $extract: ['prop1', 'prop2', 'prop3'],
+  // Causes to transform a non-GET request's body/payload to FormData
+  $formData: true,
 })
 ```
 
 ## Aborting requests
+
 The simplest way to abort a request is like this
+
 ```javascript
 const ac = new AbortController()
 
-zemi.get('someCollection', {
-  $options: { signal: ac.signal }
+vzemi.get("someCollection", {
+  $options: { signal: ac.signal },
 })
 
 ac.abort()
 ```
 
-## Overwriting collection HTTP method
-`zemi.fetch` does't make much sense to you? We've got you covered with<br >
-Existing collection method is being overwritten while making this request
-```javascript
-zemi.get('someCollection', {...})
-zemi.put('someCollection', {...})
-zemi.post('someCollection', {...})
-zemi.patch('someCollection', {...})
-zemi.delete('someCollection', {...})
-```
-
-## Changing options, headers, etc.
-```javascript
-zemi.setup({
-  collections: myCollections,
-  options: {
-    headers: {
-      no: 'more',
-      hanging: 'wires',
-      bearer: 'HASH' // Your token or null to disable the header
-    }
-  }
-});
-```
-
-## Mocking endpoints
-```javascript
-const myCollections = {
-  unfinished: {
-    url: 'http://non.finished-api.yourdomain.com/api/v3/something',
-    method: 'GET',
-
-    // OPTIONAL PARAMETER - Whatever you put here will be your `data`
-    mock: {some: [1, 22, 333], more: 'stuff'}
-  },
-};
-
-await fff.fetch('unfinished')
-// {
-//   MOCK: true,
-//   collection: "unfinished",
-//   data: {some: [1, 22, 333], more: "stuff"},
-// }
-```
-
 ## Dispatching global event on **any** fetch, successful and failed
-```javascript
-zemi.setup({
-  always: 'YOUR_EVENT_NAME', // OPTIONAL PARAMETER - String
-});
-```
 
-## Important note about fetch
-You are expected to have `fetch` in your global scope.
+As vzemi is a Proxy, the setter function only accepts one possible key: `emitAlways`
+The only acceptable value is `string`
+```typescript
+vzemi.emitAlways = 'custom-event-name'
+```

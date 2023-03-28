@@ -1,0 +1,16 @@
+# ignore all files and folders in the root directory
+
+# except the following files
+!README.md
+!LICENSE
+
+# ignore source code files
+/src/
+/tsconfig.json
+
+# ignore test files
+/tests/
+
+# ignore build output
+/dist/
+*.tsbuildinfo

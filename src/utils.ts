@@ -1,35 +1,6 @@
-import type { GenericObj, FetchErrorInput, FetchErrorOutput, SpecialSplitResult, BuildFormDataProps } from '../types'
+import type { GenericObj, FetchErrorInput, FetchErrorOutput, SpecialSplitResult, BuildFormDataProps } from './types'
 
-export const isObject = (v: unknown) => v && typeof v === 'object' && !Array.isArray(v)
-
-export const deepMergeXX = (A: GenericObj = {}, B: GenericObj = {}) => {
-  const result = Object.create(null)
-
-  for (const key of Object.keys({ ...A, ...B })) {
-    const a = A[key]
-    const b = B[key]
-
-    result[key] = isObject(a) || isObject(b)
-      ? deepMerge(a, b)
-      : b || a
-  }
-
-  return result
-}
-
-export const deepMerge = (A: GenericObj = {}, B: GenericObj = {}): GenericObj => {
-  return Object.keys({ ...A, ...B }).reduce((acc, key) => {
-    const a = A[key]
-    const b = B[key]
-    const value = isObject(a) || isObject(b)
-      ? deepMerge(a, b)
-      : b || a
-
-    return Object.assign(acc, { [key]: value })
-  }, Object.create(null))
-}
-
-export function produceError(err: FetchErrorInput, result?: GenericObj): Promise<FetchErrorOutput> {
+export const produceError = (err: FetchErrorInput, result?: GenericObj): Promise<FetchErrorOutput> => {
   const { problems = [] } = err || {}
   const { data = null } = result || {}
 
@@ -38,7 +9,7 @@ export function produceError(err: FetchErrorInput, result?: GenericObj): Promise
   return Promise.reject({ ...result, error: 1, data, problems })
 }
 
-export function splitProps(obj: GenericObj): SpecialSplitResult {
+export const splitProps = (obj: GenericObj): SpecialSplitResult => {
   const SPECIAL = new Set(['$body', '$path', '$options', '$headers', '$formData'])
   const result: SpecialSplitResult = { params: {}, special: {} }
 
@@ -50,7 +21,7 @@ export function splitProps(obj: GenericObj): SpecialSplitResult {
   return result
 }
 
-export function toCGI(options: GenericObj = {}): string {
+export const toCGI = (options: GenericObj = {}): string => {
   const keys = Object.keys(options)
   const max = keys.length - 1
   const initial = keys.length ? '?' : ''
@@ -62,7 +33,7 @@ export function toCGI(options: GenericObj = {}): string {
   }, initial)
 }
 
-export function isString(str: unknown, checkEmpty?: boolean) {
+export const isString = (str: unknown, checkEmpty?: boolean) => {
   const isString = typeof str === 'string'
   return checkEmpty !== true ? isString : isString && !!str.length
 }
@@ -80,7 +51,7 @@ export const delayResponse = async (startStamp: number, delay: number) => {
 const regex = { json: /application\/json/, file: /image|file/ }
 const contentType = 'content-type'
 
-export async function fetchData(uri: string, options: RequestInit = {}) {
+export const fetchData = async (uri: string, options: RequestInit = {}) => {
   try {
     const res: GenericObj = await fetch(uri, options)
     const headers = Object.fromEntries(res.headers)
@@ -90,7 +61,6 @@ export async function fetchData(uri: string, options: RequestInit = {}) {
       : regex.file.test(contentHeader) ? res.blob() : res.text())
     const { status } = res
     const result = { status, data }
-    console.warn('SAY WUT NOW', headers)
 
     return status >= 400
       ? produceError({ message: res.statusText }, result)

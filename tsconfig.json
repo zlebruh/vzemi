@@ -1,7 +1,7 @@
 {
-  // "include": ["src/**/*.ts", "src/**/*.d.ts"],
-  // "exclude": ["*.test.ts", "*.test.js"],
-  "exclude": ["src/**/*.test.ts", "src/**/*.test.js"],
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "**/*.test.ts"],
+
   "compilerOptions": {
     /* Visit https://aka.ms/tsconfig to read more about this file */
 
@@ -29,9 +29,10 @@
     // "moduleDetection": "auto",                        /* Control what method is used to detect module-format JS files. */
 
     /* Modules */
-    // "module": "ES2022",
-    "module": "commonjs",                                /* Specify what module code is generated. */
+    "module": "ES2022",
+    // "module": "commonjs",                                /* Specify what module code is generated. */
     // "rootDir": "./",                                  /* Specify the root folder within your source files. */
+    "rootDir": "./src",                                  /* Specify the root folder within your source files. */
     // "moduleResolution": "node10",                     /* Specify how TypeScript looks up a file from a given module specifier. */
     "moduleResolution": "nodenext",                     /* Specify how TypeScript looks up a file from a given module specifier. */
     // "baseUrl": "./",                                  /* Specify the base directory to resolve non-relative module names. */

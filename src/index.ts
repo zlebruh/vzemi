@@ -1,26 +1,24 @@
-import type { GenericObj, EndPoints, EndPointMock, BuildPayloadProps, VirtualMethod,SpecialSplitResult } from '../types'
+import type { GenericObj, EndPoints, EndPointMock, BuildPayloadProps, VirtualMethod,SpecialSplitResult } from './types'
 import {
   fetchData, buildFormData, produceError,
-  toCGI, isString, splitProps, delayResponse, deepMerge,
+  toCGI, isString, splitProps, delayResponse,
 } from './utils'
 
 // Exposed
-class Origins extends Map {
-  collectScopedParams(uri: string) {
-    return Array.from(this.keys()).reduce((acc, k) => {
-      return uri?.startsWith(k)
-        ? deepMerge(acc, this.get(k))
-        : acc
-    }, Object.create(null))
-  }
-}
-
-class Endpoints extends Map {
+class TurboMap extends Map {
   setMany(list: EndPoints) {
     for (const key in list) this.set(key, list[key])
     return this
   }
 }
+
+class Origins extends TurboMap {
+  find(uri: string) {
+    const key = Array.from(this.keys()).find(k => uri?.startsWith(k))
+    return this.get(key) || Object.create(null)
+  }
+}
+class Endpoints extends TurboMap {}
 
 export const virtualMethods = new Set(['get', 'put', 'post', 'patch', 'delete', 'fetch'])
 
@@ -46,16 +44,16 @@ const verifyInfo = (info: GenericObj) => {
 
 const buildOptions = (p: BuildPayloadProps) => {
   const { endpoint, props, method, special } = p
-  const originParams = origins.collectScopedParams(endpoint.uri)
+  const originOptions = origins.find(endpoint.uri)
   const formData = special.$formData || endpoint.props?.formData
 
   const options = {
-    ...originParams.options,
+    ...originOptions,
     ...endpoint.options,
     ...special.$options,
     method: method || endpoint.method,
     headers: {
-      ...originParams.headers,
+      ...originOptions.headers,
       ...endpoint.options?.headers,
       ...endpoint.headers,
       ...special.$options?.headers,
@@ -65,11 +63,11 @@ const buildOptions = (p: BuildPayloadProps) => {
   
   if (method.toUpperCase() !== 'GET') {
     if (formData) {
-      options.body = formData instanceof HTMLFormElement
+      options.body = globalThis?.Window && formData instanceof HTMLFormElement
         ? new FormData(formData)
         : buildFormData({ params: props })
     } else {
-      const body = special.$body || { ...originParams.props, ...endpoint.props, ...props }
+      const body = special.$body || { ...endpoint.props, ...props }
       options.body = JSON.stringify(body)
     }
   }
@@ -89,8 +87,7 @@ const doMock = async (mock: EndPointMock, uri: string, options: RequestInit, nam
   return Promise.resolve({ data, MOCK: true })
 }
 
-
-const beginFetchSequence = (methodKey: VirtualMethod | null, name: string, props: GenericObj) => {
+const beginFetchSequence = async (methodKey: VirtualMethod | null, name: string, props: GenericObj) => {
   const endpoint = endpoints.get(name)
   const method = methodKey === 'fetch' ? endpoint?.method : methodKey
   const problems = verifyInfo({ name, method, uri: endpoint?.uri })
@@ -112,25 +109,23 @@ const beginFetchSequence = (methodKey: VirtualMethod | null, name: string, props
       ? doMock(endpoint.mock, uri, options, name)
       : fetchData(uri, options)
 
-    const startStamp = Date.now()
-    
     ongoingRequests.set(hash, promise)
+    const startStamp = Date.now()
+    const response = await promise.catch((v: GenericObj) => v)
+    ongoingRequests.delete(hash)
 
-    return promise
-      .then(async (v: GenericObj) => {
-        // Delay the response if needed
-        if (endpoint.delayAtLeast) await delayResponse(startStamp, endpoint.delayAtLeast)
+    // Delay the response if needed
+    if (endpoint.delayAtLeast) await delayResponse(startStamp, endpoint.delayAtLeast)
 
-        // Emit response if needed
-        const always = proxyTarget.dispatchAlways
-        always && globalThis?.dispatchEvent(new CustomEvent(always, { detail: v }))
+    // Emit (but delay until the next tick) the response if needed
+    const event = proxyTarget.emitAlways
+    event && setTimeout(() => globalThis?.dispatchEvent(new CustomEvent(event, { detail: response })), 0)
 
-        return v
-      })
-      .finally(() => ongoingRequests.delete(hash))
+    return response.error ? Promise.reject(response) : Promise.resolve(response)
   }
 }
 
+const allowedSetters = new Set(['emitAlways'])
 export default new Proxy(proxyTarget, {
   get(target: GenericObj, key: VirtualMethod) {
     return virtualMethods.has(key)
@@ -138,7 +133,6 @@ export default new Proxy(proxyTarget, {
       : target[key]
   },
   set(target: GenericObj, key: string, value: unknown) {
-    const allowedSetters = new Set(['dispatchAlways'])
     const willChange = allowedSetters.has(key) && isString(value, true)
 
     if (willChange) target[key] = value
