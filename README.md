@@ -30,12 +30,7 @@ await vzemi.fetch("books", { index: 0, size: 100 })
 
 ## A word on the vzemi's structure
 
-Both `origins` and `endpoints` are extend the regular old Map.
-
-- `endpoints` can be managed via the set, setMany, and clear methods for one or
-  multiple EndPoint objects.
-- `origins` can be managed via the set, setMany, and clear methods for one or
-  multiple RequestInit objects.
+Both `origins` and `endpoints` extend the regular old [Map](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map) and can be managed via the **set**, **setMany**, **delete**, and **clear** methods.
 
 <br>
 
@@ -48,7 +43,7 @@ interface EndPoint {
   // This can be any full or relative path
   uri: string
 
-  // Optional. vzemi.fetch defaults to this value. vzemi.get/post/etc. all override this value
+  // Optional. vzemi.fetch defaults to this value. vzemi.get/post/etc. override this value
   method?: string
 
   // Optional. Predefined props that you might have for this endpoint
