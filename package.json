@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "description": "Fetching REST APIs",
   "main": "dist/index.js",
+  "types": "index.d.ts",
   "scripts": {
     "init": "tsc --init",
     "build": "tsc",

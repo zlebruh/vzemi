@@ -1,6 +1,7 @@
 # ignore all files and folders in the root directory
 
 # except the following files
+!index.d.ts
 !README.md
 !LICENSE
 
