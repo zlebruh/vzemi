@@ -1,5 +1,3 @@
-import type { GenericObj, FetchErrorInput, FetchErrorOutput, SpecialSplitResult, BuildFormDataProps } from './types'
-
 export const produceError = (err: FetchErrorInput, result?: GenericObj): Promise<FetchErrorOutput> => {
   const { problems = [] } = err || {}
   const { data = null } = result || {}
@@ -95,4 +93,11 @@ export const buildFormData = (props: BuildFormDataProps) => {
   keys.forEach(([k, v]) => formData.append(k, v))
 
   return formData
+}
+
+// TODO: ADD TESTS
+export const drop = (ob: GenericObj, arr: string[]) => {
+  const clone = { ...ob }
+  arr.forEach((key) => delete clone[key])
+  return clone
 }

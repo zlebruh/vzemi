@@ -1,6 +1,5 @@
-import type { GenericObj, EndPoints, EndPointMock, BuildPayloadProps, VirtualMethod,SpecialSplitResult } from './types'
 import {
-  fetchData, buildFormData, produceError,
+  fetchData, buildFormData, produceError, drop,
   toCGI, isString, splitProps, delayResponse,
 } from './utils'
 
@@ -42,39 +41,49 @@ const verifyInfo = (info: GenericObj) => {
     }).filter(Boolean)
 }
 
-const buildOptions = (p: BuildPayloadProps) => {
-  const { endpoint, props, method, special } = p
-  const originOptions = origins.find(endpoint.uri)
-  const formData = special.$formData || endpoint.props?.formData
+const buildReqSequenceObj = (name: string, method: VirtualMethod, endpoint: EndPoint, props: GenericObj): BuildSequenceObj => {
+  // Find a matching origin
+  const origin: EndPoint = origins.find(endpoint.uri)
+  // Combine request origin props with endpoint and request props before splitting the object
+  const { params, special }: SpecialSplitResult = splitProps({ ...origin.props, ...endpoint.props, ...props })
+  const buildHelperProps: BuildSequenceHelperProps = { origin, endpoint, props: params, method, special }
+  return {
+    uri: buildURL(buildHelperProps),
+    hash: `${method}/${name}/${JSON.stringify(params)}`.toLocaleLowerCase(),
+    options: buildOptions(buildHelperProps),
+  }
+}
 
+const buildOptions = (p: BuildSequenceHelperProps) => {
+  const { origin, endpoint, props, method, special } = p
   const options = {
-    ...originOptions,
+    ...drop(origin, ['props']),
     ...endpoint.options,
     ...special.$options,
     method: method || endpoint.method,
     headers: {
-      ...originOptions.headers,
+      ...origin.headers,
       ...endpoint.options?.headers,
       ...endpoint.headers,
       ...special.$options?.headers,
       ...special.$headers
     },
   }
-  
+
   if (method.toUpperCase() !== 'GET') {
+    const formData = special.$formData || endpoint.props?.formData
     if (formData) {
       options.body = globalThis?.Window && formData instanceof HTMLFormElement
         ? new FormData(formData)
         : buildFormData({ params: props })
     } else {
-      const body = special.$body || { ...endpoint.props, ...props }
-      options.body = JSON.stringify(body)
+      options.body = JSON.stringify(special.$body || props)
     }
   }
 
   return options
 }
-const buildURL = (p: BuildPayloadProps) => {
+const buildURL = (p: BuildSequenceHelperProps) => {
   const path = p.special.$path || ''
   const postfix = p.method.toUpperCase() === 'GET' ? toCGI(p.props) : ''
   return p.endpoint.uri + path + postfix
@@ -95,11 +104,7 @@ const beginFetchSequence = async (methodKey: VirtualMethod | null, name: string,
   if (problems.length) {
     return produceError({ problems })
   } else {
-    const { params, special }: SpecialSplitResult = splitProps(props)
-    const buildPayloadProps = { endpoint, props: params, method, special }
-    const options = buildOptions(buildPayloadProps)
-    const uri = buildURL(buildPayloadProps)
-    const hash = `${method}/${name}/${JSON.stringify(params)}`.toLocaleLowerCase()
+    const { uri, hash, options } = buildReqSequenceObj(name, method, endpoint, props)
 
     // Match duplicates
     if (ongoingRequests.has(hash)) return ongoingRequests.get(hash)
