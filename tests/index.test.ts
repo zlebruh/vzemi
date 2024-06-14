@@ -1,5 +1,4 @@
 import vzemi, { virtualMethods } from '../src/index'
-import { GenericObj } from '../src/types'
 
 const resetMaps = () => {
   vzemi.endpoints.clear()
@@ -102,17 +101,18 @@ describe('vzemi - index.ts', () => {
       })
     })
 
-    it('Merging options/headers/props correctly', async () => {
+    it('Merging options/headers/props correctly AND in the correct order', async () => {
       const COL_X = {
         uri: '/path-X',
         method: 'POST',
         mock: mockFn,
         options: { mode: 'cors' },
         headers: { another: 'token' },
+        props: { oh: 'no' },
       }
       const name = 'xxx'
       vzemi.endpoints.set(name, COL_X)
-      vzemi.origins.set('/', { cache: 'force-cache' })
+      vzemi.origins.set('/', { cache: 'force-cache', props: { turbo: 'diesel' } })
 
       const props = { no: 'wai', $headers: { mama: 'nono' } }
       const result = await vzemi.post(name, props).catch((v: unknown) => v)
@@ -124,7 +124,7 @@ describe('vzemi - index.ts', () => {
           options: {
             cache: 'force-cache',
             mode: 'cors',
-            body: JSON.stringify({ no: 'wai' }),
+            body: JSON.stringify({ turbo: 'diesel', oh: 'no', no: 'wai' }),
             headers: { ...props.$headers, ...COL_X.headers },
             method: 'post'
           },

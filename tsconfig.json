@@ -29,7 +29,8 @@
     // "moduleDetection": "auto",                        /* Control what method is used to detect module-format JS files. */
 
     /* Modules */
-    "module": "ES2022",
+    // "module": "ES2022",
+    "module": "NodeNext",
     // "module": "commonjs",                                /* Specify what module code is generated. */
     // "rootDir": "./",                                  /* Specify the root folder within your source files. */
     "rootDir": "./src",                                  /* Specify the root folder within your source files. */
